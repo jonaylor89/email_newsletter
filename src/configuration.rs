@@ -1,9 +1,9 @@
 use secrecy::ExposeSecret;
 use secrecy::Secret;
 use serde_aux::prelude::deserialize_number_from_string;
-use sqlx::ConnectOptions;
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgSslMode;
+use sqlx::ConnectOptions;
 
 use crate::domain::SubscriberEmail;
 
@@ -44,7 +44,6 @@ impl DatabaseSettings {
     }
 
     pub fn without_db(&self) -> PgConnectOptions {
-
         let ssl_mode = if self.require_ssl {
             PgSslMode::Require
         } else {

@@ -39,6 +39,10 @@ uuid = {version = "1.1.2", features = ["v4"]}
 validator = "0.15.0"
 linkify = "0.8.1"
 rand = { version = "0.8.5", features = ["std_rng"] }
+thiserror = "1.0.31"
+anyhow = "1.0.58"
+base64 = "0.13.0"
+argon2 = { version = "0.4.1", features = ["std"] }
 
 [dependencies.sqlx]
 default-features = false

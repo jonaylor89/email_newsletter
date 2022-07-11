@@ -1,4 +1,3 @@
-
 use email_newsletter::configuration::get_configuration;
 use email_newsletter::startup::Application;
 use email_newsletter::telemetry::{get_subscriber, init_subscriber};
