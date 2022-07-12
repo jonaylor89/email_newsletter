@@ -10,10 +10,10 @@ use secrecy::Secret;
 use sqlx::PgPool;
 
 use crate::{
-    domain::SubscriberEmail, 
-    email_client::EmailClient, 
-    routes::error_chain_fmt, 
-    authentication::{AuthError, validate_credentials, Credentials},
+    authentication::{validate_credentials, AuthError, Credentials},
+    domain::SubscriberEmail,
+    email_client::EmailClient,
+    routes::error_chain_fmt,
 };
 
 struct ConfirmedSubscriber {
@@ -176,4 +176,3 @@ fn basic_authentication(headers: &HeaderMap) -> Result<Credentials, anyhow::Erro
         password: Secret::new(password),
     })
 }
-
