@@ -1,9 +1,9 @@
 use anyhow::Context;
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
+use argon2::{Argon2, PasswordHash, PasswordVerifier, password_hash::SaltString, Algorithm, Params, Version, PasswordHasher};
 use secrecy::{ExposeSecret, Secret};
 use sqlx::PgPool;
 
-use crate::telemetry::spawn_blocking_with_tracing;
+use crate::{telemetry::spawn_blocking_with_tracing, domain::Password};
 
 #[derive(thiserror::Error, Debug)]
 pub enum AuthError {
@@ -91,4 +91,56 @@ pub fn verify_password_hash(
         )
         .context("Invalid password.")
         .map_err(AuthError::InvalidCredentials)
+}
+
+
+#[tracing::instrument(
+    name = "Change password",
+    skip(password, pool)
+)]
+pub async fn change_password(
+    user_id: uuid::Uuid,
+    password: Password,
+    pool: &PgPool,
+) -> Result<(), anyhow::Error> {
+    let password_hash = spawn_blocking_with_tracing(
+        move || compute_password_hash(password)
+    )
+    .await?
+    .context("Failed to hash password")?;
+
+    sqlx::query!(
+        r#"
+        UPDATE users
+        SET password_hash = $1
+        WHERE user_id = $2
+        "#,
+        password_hash.expose_secret(),
+        user_id,
+    )
+    .execute(pool)
+    .await
+    .context("Failed to change user's password in the database")?;
+
+    Ok(())
+}
+
+fn compute_password_hash(
+    password: Password,
+) -> Result<Secret<String>, anyhow::Error> {
+    let salt = SaltString::generate(&mut rand::thread_rng());
+    let password_hash = Argon2::new(
+        Algorithm::Argon2id, 
+        Version::V0x13,
+        Params::new(15_000, 2, 1, None).unwrap(),
+    )
+    .hash_password(
+        password
+            .as_ref()
+            .as_bytes(), 
+        &salt,
+    )?
+    .to_string();
+
+    Ok(Secret::new(password_hash))
 }
