@@ -1,6 +1,16 @@
 use actix_web::{http::header::ContentType, HttpResponse};
+use actix_web_flash_messages::IncomingFlashMessages;
+use std::fmt::Write;
 
-pub async fn newsletters_form() -> Result<HttpResponse, actix_web::Error> {
+pub async fn newsletters_form(
+    flash_messages: IncomingFlashMessages,
+) -> Result<HttpResponse, actix_web::Error> {
+
+    let mut msg_html = String::new();
+    for m in flash_messages.iter() {
+        writeln!(msg_html, "<p><i>{}</i></p>", m.content()).unwrap();
+    }
+
 
     Ok(HttpResponse::Ok()
         .content_type(ContentType::html())
@@ -12,6 +22,7 @@ pub async fn newsletters_form() -> Result<HttpResponse, actix_web::Error> {
                 <title>Admin dashboard</title>
             </head>
             <body>
+            {msg_html}
             <form action="/admin/newsletters" method="post">
             <label>Title
                 <input

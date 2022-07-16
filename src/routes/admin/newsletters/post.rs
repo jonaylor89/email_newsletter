@@ -1,12 +1,13 @@
 use actix_web::{
     web, HttpResponse,
 };
+use actix_web_flash_messages::FlashMessage;
 use anyhow::Context;
 use sqlx::PgPool;
 
 use crate::{
     domain::SubscriberEmail,
-    email_client::EmailClient, utils::e500,
+    email_client::EmailClient, utils::{e500, see_other},
 };
 
 struct ConfirmedSubscriber {
@@ -59,7 +60,8 @@ pub async fn publish_newsletter(
         }
     }
 
-    Ok(HttpResponse::Ok().finish())
+    FlashMessage::info("Newsletter submitted").send();
+    Ok(see_other("/admin/newsletters"))
 }
 
 #[tracing::instrument(name = "Get confirmed subscribers", skip(pool))]

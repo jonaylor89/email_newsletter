@@ -41,18 +41,3 @@ We will look at three categories of callers:
 * Other APIs (machine-to-machine);
 * A person, via a browser;
 * Another API, on behalf of a person.
-
-
-- [x] Add a Send a newsletter issue link to the admin dashboard;
-
-- [x] Add an HTML form at GET /admin/newsletters to submit a new issue;
-
-- [x] Adapt POST /newsletters to process the form data:
-
-- [x] Change the route to POST /admin/newsletters;
-
-- [x] Migrate from 'Basic' to session-based authentication;
-
-- [x] Use the Form extractor (application/x-www-form-urlencoded) instead of the Json extractor (application/json) to handle the request body;
-
-- [ ] Adapt the test suite.
