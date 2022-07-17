@@ -41,3 +41,5 @@ We will look at three categories of callers:
 * Other APIs (machine-to-machine);
 * A person, via a browser;
 * Another API, on behalf of a person.
+
+* We neglected one detail: there is no expiry mechanism for our idempotency keys. Try designing one as an exercise, using what we learned on background workers as a reference
