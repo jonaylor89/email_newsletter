@@ -1,9 +1,24 @@
-use crate::helpers::{spawn_app, ConfirmationLinks, TestApp, assert_is_redirect_to};
+use std::time::Duration;
+
+use crate::helpers::{assert_is_redirect_to, spawn_app, ConfirmationLinks, TestApp};
+use fake::faker::name::en::Name;
+use fake::faker::internet::en::SafeEmail;
+use fake::Fake;
 use wiremock::matchers::{any, method, path};
-use wiremock::{Mock, ResponseTemplate};
+use wiremock::{Mock, ResponseTemplate, MockBuilder};
+
+fn when_sending_an_email() -> MockBuilder {
+    Mock::given(path("/email")).and(method("POST"))
+}
 
 async fn create_unconfirmed_subscriber(app: &TestApp) -> ConfirmationLinks {
-    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+
+    let name: String = Name().fake();
+    let email: String = SafeEmail().fake();
+    let body = serde_urlencoded::to_string(&serde_json::json!({
+        "name": name,
+        "email": email,
+    })).unwrap();
 
     let _mock_guard = Mock::given(path("/email"))
         .and(method("POST"))
@@ -42,10 +57,7 @@ async fn create_confirmed_subscriber(app: &TestApp) {
 #[tokio::test]
 async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
     let app = spawn_app().await;
-    app.post_login(&serde_json::json!({
-        "username": &app.test_user.username,
-        "password": &app.test_user.password,
-    })).await;
+    app.test_user.login(&app).await;
     create_unconfirmed_subscriber(&app).await;
 
     Mock::given(any())
@@ -55,9 +67,14 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
         .mount(&app.email_server)
         .await;
 
-    let newsletter_request_body = "title=TITLE&text=content&html=%3Cp%3Econtent%3C%2Fp%3E";
+    let newsletter_request_body = serde_json::json!({
+        "title": "TITLE",
+        "text": "content",
+        "html": "<p>content</p>",
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
+    });
 
-    let response = app.post_newsletters(newsletter_request_body.into()).await;
+    let response = app.post_newsletters(&newsletter_request_body).await;
 
     assert_is_redirect_to(&response, "/admin/newsletters");
 }
@@ -66,10 +83,7 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
 async fn newsletters_are_delivered_to_confirmed_subscribers() {
     let app = spawn_app().await;
     create_confirmed_subscriber(&app).await;
-    let response = app.post_login(&serde_json::json!({
-        "username": &app.test_user.username,
-        "password": &app.test_user.password,
-    })).await;
+    let response = app.test_user.login(&app).await;
     assert_is_redirect_to(&response, "/admin/dashboard");
 
     Mock::given(path("/email"))
@@ -79,35 +93,50 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
         .mount(&app.email_server)
         .await;
 
-    let newsletter_request_body = "title=TITLE&text=content&html=%3Cp%3Econtent%3C%2Fp%3E";
+    let newsletter_request_body = serde_json::json!({
+        "title": "TITLE",
+        "text": "content",
+        "html": "<p>content</p>",
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
+    });
 
-    let response = app.post_newsletters(newsletter_request_body.into()).await;
+    let response = app.post_newsletters(&newsletter_request_body).await;
 
     assert_is_redirect_to(&response, "/admin/newsletters");
+
+    let html_page = app.get_newsletters_html().await;
+    assert!(html_page.contains(
+        "<p><i>The newsletter issue has been accepted - emails will go out shortly</i></p>"
+    ));
+
+    app.dispatch_all_pending_emails().await;
 }
 
 #[tokio::test]
 async fn newsletters_returns_400_for_invalid_data() {
     let app = spawn_app().await;
-    app.post_login(&serde_json::json!({
-        "username": &app.test_user.username,
-        "password": &app.test_user.password,
-    })).await;
+    app.test_user.login(&app).await;
 
     let test_cases = vec![
         (
-
-            "text=Newsletter%20body%20as%20plain%20text&html=%3Cp%3ENewsletter%20body%20as%20HTML%3C%2Fp%3E",
+            serde_json::json!({
+                "text": "content",
+                "html": "<p>content</p>",
+                "idempotency_key": uuid::Uuid::new_v4().to_string(),
+            }),
             "missing title",
         ),
         (
-            "title=Newsletter%20title",
+            serde_json::json!({
+                "title": "TITLE",
+                "idempotency_key": uuid::Uuid::new_v4().to_string(),
+            }),
             "missing content",
         ),
     ];
 
     for (invalid_body, error_message) in test_cases {
-        let response = app.post_newsletters(invalid_body.into()).await;
+        let response = app.post_newsletters(&invalid_body).await;
 
         assert_eq!(
             400,
@@ -116,4 +145,77 @@ async fn newsletters_returns_400_for_invalid_data() {
             error_message
         );
     }
+}
+
+#[tokio::test]
+async fn newsletter_creation_is_idempodent() {
+    let app = spawn_app().await;
+    create_confirmed_subscriber(&app).await;
+    app.test_user.login(&app).await;
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
+
+    let newsletter_request_body = serde_json::json!({
+        "title": "TITLE",
+        "text": "content",
+        "html": "<p>content</p>",
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
+    });
+
+    let response = app.post_newsletters(&newsletter_request_body).await;
+    assert_is_redirect_to(&response, "/admin/newsletters");
+
+    let html_page = app.get_newsletters_html().await;
+    assert!(html_page.contains(
+        "<p><i>The newsletter issue has been accepted - emails will go out shortly</i></p>"
+    ));
+
+
+    let response = app.post_newsletters(&newsletter_request_body).await;
+    assert_is_redirect_to(&response, "/admin/newsletters");
+
+    let html_page = app.get_newsletters_html().await;
+    assert!(html_page.contains(
+        "<p><i>The newsletter issue has been accepted - emails will go out shortly</i></p>"
+    ));
+    app.dispatch_all_pending_emails().await;
+}
+
+#[tokio::test]
+async fn concurrent_form_submission_is_handled_gracefully() {
+    let app = spawn_app().await;
+    create_confirmed_subscriber(&app).await;
+    app.test_user.login(&app).await;
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(Duration::from_secs(2))
+        )
+        .expect(1)  
+        .mount(&app.email_server)
+        .await;
+
+    let newsletter_request_body = serde_json::json!({
+        "title": "TITLE",
+        "text": "content",
+        "html": "<p>content</p>",
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
+    });   
+
+    let response1 = app.post_newsletters(&newsletter_request_body);
+    let response2 = app.post_newsletters(&newsletter_request_body);
+
+    let (response1, response2) = tokio::join!(response1, response2);
+
+    assert_eq!(response1.status(), response2.status());
+    assert_eq!(response1.text().await.unwrap(), response2.text().await.unwrap());
+
+    app.dispatch_all_pending_emails().await;
 }

@@ -1,10 +1,12 @@
 use argon2::password_hash::SaltString;
 use argon2::{Algorithm, Argon2, Params, PasswordHasher, Version};
+use email_newsletter::email_client::EmailClient;
 use once_cell::sync::Lazy;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 
 use email_newsletter::configuration::{get_configuration, DatabaseSettings};
+use email_newsletter::issue_delivery_queue::{try_execute_task, ExecutionOutcome};
 use email_newsletter::startup::{get_connection_pool, Application};
 use email_newsletter::telemetry::{get_subscriber, init_subscriber};
 use wiremock::MockServer;
@@ -34,6 +36,7 @@ pub struct TestApp {
     pub email_server: MockServer,
     pub test_user: TestUser,
     pub api_client: reqwest::Client,
+    pub email_client: EmailClient,
 }
 
 impl TestApp {
@@ -70,14 +73,28 @@ impl TestApp {
         ConfirmationLinks { html, plain_text }
     }
 
-    pub async fn post_newsletters(&self, body: String) -> reqwest::Response {
+    pub async fn post_newsletters<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
         self.api_client
             .post(&format!("{}/admin/newsletters", &self.address))
             .header("Content-Type", "application/x-www-form-urlencoded")
-            .body(body)
+            .form(body)
             .send()
             .await
             .expect("Failed to execute request")
+    }
+
+    pub async fn get_newsletters_html(&self) -> String {
+        self.api_client
+            .get(&format!("{}/admin/newsletters", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request")
+            .text()
+            .await
+            .unwrap()
     }
 
     pub async fn post_login<Body>(&self, body: &Body) -> reqwest::Response
@@ -146,6 +163,17 @@ impl TestApp {
             .await
             .expect("Failed to execute request")
     }
+    pub async fn dispatch_all_pending_emails(&self) {
+        loop {
+            if let ExecutionOutcome::EmptyQueue =
+                try_execute_task(&self.db_pool, &self.email_client)
+                    .await
+                    .unwrap()
+            {
+                break;
+            }
+        }
+    }
 }
 
 pub struct TestUser {
@@ -185,6 +213,14 @@ impl TestUser {
         .execute(pool)
         .await
         .expect("Failed to create test user");
+    }
+
+    pub async fn login(&self, app: &TestApp) -> reqwest::Response {
+        app.post_login(&serde_json::json!({
+            "username": &app.test_user.username,
+            "password": &app.test_user.password,
+        }))
+        .await
     }
 }
 
@@ -226,6 +262,7 @@ pub async fn spawn_app() -> TestApp {
         email_server,
         test_user: TestUser::generate(),
         api_client: client,
+        email_client: configuration.email_client.client(),
     };
     test_app.test_user.store(&test_app.db_pool).await;
 
