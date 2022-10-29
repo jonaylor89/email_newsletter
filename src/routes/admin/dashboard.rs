@@ -1,7 +1,6 @@
 use actix_web::{http::header::ContentType, web, HttpResponse};
 use sqlx::PgPool;
 use uuid::Uuid;
-use anyhow::Context;
 
 use crate::{utils::e500, authentication::UserId};
 
