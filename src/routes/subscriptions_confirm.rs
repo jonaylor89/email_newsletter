@@ -11,19 +11,29 @@ pub struct Parameters {
 pub async fn confirm(parameters: web::Query<Parameters>, pool: web::Data<PgPool>) -> HttpResponse {
     let id = match get_subscriber_id_from_token(&pool, &parameters.subscription_token).await {
         Ok(id) => id,
-        Err(_) => {
+        Err(e) => {
+            tracing::error!("Failed to get subscriber ID from token: {:?}", e);
             return HttpResponse::InternalServerError().finish();
         }
     };
 
     match id {
-        None => HttpResponse::Unauthorized().finish(),
+        None => {
+            // Token doesn't exist or is invalid
+            tracing::warn!(
+                "Invalid or non-existent confirmation token: {}",
+                parameters.subscription_token
+            );
+            return HttpResponse::BadRequest().body("Invalid confirmation token. The token may have expired or does not exist.");
+        }
         Some(subscriber_id) => {
-            if confirm_subscriber(&pool, subscriber_id).await.is_err() {
-                return HttpResponse::InternalServerError().finish();
+            match confirm_subscriber(&pool, subscriber_id).await {
+                Ok(_) => HttpResponse::Ok().body("Your subscription has been confirmed!"),
+                Err(e) => {
+                    tracing::error!("Failed to confirm subscriber {}: {:?}", subscriber_id, e);
+                    HttpResponse::InternalServerError().body("Failed to confirm subscription. Please try again later.")
+                }
             }
-
-            HttpResponse::Ok().finish()
         }
     }
 }
