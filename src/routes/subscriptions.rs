@@ -1,6 +1,7 @@
 use actix_web::http::StatusCode;
 use actix_web::{web, HttpResponse, ResponseError};
 use anyhow::Context;
+use chrono::Utc;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -88,31 +89,104 @@ pub async fn subscribe(
         .await
         .context("Failed to acquire a Postgres connection from the pool")?;
 
-    let subscriber_id = insert_subscriber(&mut transaction, &new_subscriber)
+    // Check if subscriber already exists
+    let existing_subscriber = get_subscriber_by_email(&mut transaction, &new_subscriber.email)
         .await
-        .context("Failed to insert new subcriber in the database")?;
+        .context("Failed to check for existing subscriber")?;
 
-    let subscription_token = generate_subscription_token();
+    match existing_subscriber {
+        Some((subscriber_id, status)) if status == "confirmed" => {
+            // Already subscribed - send a friendly email
+            transaction
+                .commit()
+                .await
+                .context("Failed to commit SQL transaction")?;
 
-    store_token(&mut transaction, subscriber_id, &subscription_token)
-        .await
-        .context("Failed to store the confirmation token for a new subscriber")?;
+            send_already_subscribed_email(&email_client, &new_subscriber)
+                .await
+                .context("Failed to send already-subscribed email")?;
 
-    transaction
-        .commit()
-        .await
-        .context("Failed to commit SQL transaction to store a new subscriber")?;
+            return Ok(HttpResponse::Ok().finish());
+        }
+        Some((subscriber_id, _)) => {
+            // Pending confirmation - generate new token and resend
+            let subscription_token = generate_subscription_token();
 
-    send_confirmation_email(
-        &email_client,
-        new_subscriber,
-        &base_url.0,
-        &subscription_token,
+            store_token(&mut transaction, subscriber_id, &subscription_token)
+                .await
+                .context("Failed to store the confirmation token for existing subscriber")?;
+
+            transaction
+                .commit()
+                .await
+                .context("Failed to commit SQL transaction to store token")?;
+
+            send_confirmation_email(
+                &email_client,
+                new_subscriber,
+                &base_url.0,
+                &subscription_token,
+            )
+            .await
+            .context("Failed to send a confirmation email")?;
+
+            return Ok(HttpResponse::Ok().finish());
+        }
+        None => {
+            // New subscriber - proceed with insertion
+            let subscriber_id = insert_subscriber(&mut transaction, &new_subscriber)
+                .await
+                .context("Failed to insert new subcriber in the database")?;
+
+            let subscription_token = generate_subscription_token();
+
+            store_token(&mut transaction, subscriber_id, &subscription_token)
+                .await
+                .context("Failed to store the confirmation token for a new subscriber")?;
+
+            transaction
+                .commit()
+                .await
+                .context("Failed to commit SQL transaction to store a new subscriber")?;
+
+            send_confirmation_email(
+                &email_client,
+                new_subscriber,
+                &base_url.0,
+                &subscription_token,
+            )
+            .await
+            .context("Failed to send a confirmation email")?;
+
+            Ok(HttpResponse::Ok().finish())
+        }
+    }
+}
+
+#[tracing::instrument(
+    name = "Check if subscriber exists by email",
+    skip(transaction, email)
+)]
+pub async fn get_subscriber_by_email(
+    transaction: &mut Transaction<'_, Postgres>,
+    email: &SubscriberEmail,
+) -> Result<Option<(Uuid, String)>, sqlx::Error> {
+    let result = sqlx::query!(
+        r#"
+        SELECT id, status
+        FROM subscriptions
+        WHERE email = $1
+        "#,
+        email.as_ref(),
     )
+    .fetch_optional(transaction)
     .await
-    .context("Failed to send a confirmation email")?;
+    .map_err(|e| {
+        tracing::info!("Failed to execute query: {:?}", e);
+        e
+    })?;
 
-    Ok(HttpResponse::Ok().finish())
+    Ok(result.map(|row| (row.id, row.status)))
 }
 
 #[tracing::instrument(
@@ -200,6 +274,25 @@ pub async fn send_confirmation_email(
 
     email_client
         .send_email(&new_subscriber.email, "Welcome!", &html_body, &plain_body)
+        .await
+}
+
+#[tracing::instrument(
+    name = "Send already-subscribed email",
+    skip(email_client, subscriber)
+)]
+pub async fn send_already_subscribed_email(
+    email_client: &EmailClient,
+    subscriber: &NewSubscriber,
+) -> Result<(), reqwest::Error> {
+    let plain_body = "You're already subscribed to our newsletter!\n\
+        Thank you for your continued interest.";
+
+    let html_body = "You're already subscribed to our newsletter!<br />\
+        Thank you for your continued interest.";
+
+    email_client
+        .send_email(&subscriber.email, "Already Subscribed", &html_body, &plain_body)
         .await
 }
 
