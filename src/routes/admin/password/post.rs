@@ -4,11 +4,7 @@ use secrecy::{ExposeSecret, Secret};
 use sqlx::PgPool;
 
 use crate::{
-    authentication::{
-        validate_credentials, 
-        AuthError, 
-        Credentials, UserId, 
-    },
+    authentication::{validate_credentials, AuthError, Credentials, UserId},
     domain::Password,
     routes::get_username,
     utils::{e500, see_other},
@@ -35,10 +31,7 @@ pub async fn change_password(
         .send();
     }
 
-    let new_password: Result<Password, _> = form
-        .new_password
-        .expose_secret()
-        .try_into();
+    let new_password: Result<Password, _> = form.new_password.expose_secret().try_into();
 
     if new_password.is_err() {
         FlashMessage::error("You entered an invalid new password").send();
@@ -47,9 +40,7 @@ pub async fn change_password(
 
     let new_password = new_password.unwrap();
 
-    let username = get_username(*user_id, &pool)
-        .await
-        .map_err(e500)?;
+    let username = get_username(*user_id, &pool).await.map_err(e500)?;
 
     let credentials = Credentials {
         username,

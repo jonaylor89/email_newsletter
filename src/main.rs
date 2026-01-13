@@ -3,9 +3,8 @@ use email_newsletter::idempotency_cleanup::run_cleanup_worker;
 use email_newsletter::issue_delivery_queue::run_worker_until_stopped;
 use email_newsletter::startup::Application;
 use email_newsletter::telemetry::{get_subscriber, init_subscriber};
-use tokio::task::JoinError;
 use std::fmt::{Debug, Display};
-
+use tokio::task::JoinError;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -30,10 +29,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn report_exit(
-    task_name: &str,
-    outcome: Result<Result<(), impl Debug + Display>, JoinError>,
-) {
+fn report_exit(task_name: &str, outcome: Result<Result<(), impl Debug + Display>, JoinError>) {
     match outcome {
         Ok(Ok(())) => {
             tracing::info!("{} has exited", task_name)

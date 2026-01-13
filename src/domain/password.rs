@@ -1,4 +1,3 @@
-
 #[derive(Debug)]
 pub struct Password(String);
 
@@ -47,9 +46,7 @@ impl std::fmt::Display for Password {
 }
 
 fn validate_password(candidate_password: &str) -> bool {
-
-    let correct_length = candidate_password.len() >= 12 
-        && candidate_password.len() <= 128;
+    let correct_length = candidate_password.len() >= 12 && candidate_password.len() <= 128;
 
     return correct_length;
 }

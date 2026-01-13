@@ -33,7 +33,7 @@ pub struct FormData {
 #[tracing::instrument(
     skip(form, pool, session),
     fields(
-        username=tracing::field::Empty, 
+        username=tracing::field::Empty,
         user_id=tracing::field::Empty,
     )
 )]
@@ -50,35 +50,33 @@ pub async fn login(
     tracing::Span::current().record("username", &tracing::field::display(&credentials.username));
 
     match validate_credentials(credentials, &pool).await {
-            Ok(user_id) => {
-                tracing::Span::current().record("user_id", &tracing::field::display(&user_id));
+        Ok(user_id) => {
+            tracing::Span::current().record("user_id", &tracing::field::display(&user_id));
 
-                session.renew();
-                session.insert_user_id(user_id)
-                .map_err(|e| 
-                    login_redirect(LoginError::UnexpectedError(e.into()))
-                )?;
+            session.renew();
+            session
+                .insert_user_id(user_id)
+                .map_err(|e| login_redirect(LoginError::UnexpectedError(e.into())))?;
 
-                Ok(HttpResponse::SeeOther()
-                    .insert_header((LOCATION, "/admin/dashboard"))
-                    .finish())
-            }
-            Err(e) => {
-
-                let e = match e {
-                    AuthError::InvalidCredentials(_) => LoginError::AuthError(e.into()),
-                    AuthError::UnexpectedError(_) => LoginError::UnexpectedError(e.into()),
-                };
-
-                FlashMessage::error(e.to_string()).send();
-
-                let response = HttpResponse::SeeOther()
-                    .insert_header((LOCATION, "/login"))
-                    .finish();
-
-                Err(InternalError::from_response(e, response)) 
-            }
+            Ok(HttpResponse::SeeOther()
+                .insert_header((LOCATION, "/admin/dashboard"))
+                .finish())
         }
+        Err(e) => {
+            let e = match e {
+                AuthError::InvalidCredentials(_) => LoginError::AuthError(e.into()),
+                AuthError::UnexpectedError(_) => LoginError::UnexpectedError(e.into()),
+            };
+
+            FlashMessage::error(e.to_string()).send();
+
+            let response = HttpResponse::SeeOther()
+                .insert_header((LOCATION, "/login"))
+                .finish();
+
+            Err(InternalError::from_response(e, response))
+        }
+    }
 }
 
 fn login_redirect(e: LoginError) -> InternalError<LoginError> {

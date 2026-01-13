@@ -61,7 +61,7 @@ async fn clicking_on_the_confirmation_link_confirms_a_subscriber() {
         .unwrap();
 
     // Assert
-    let saved = sqlx::query!("SELECT email, name, status FROM subscriptions",)
+    let saved = sqlx::query!("SELECT email, name, status FROM subscriptions")
         .fetch_one(&app.db_pool)
         .await
         .expect("Failed to fetch saved subscription.");

@@ -16,8 +16,9 @@ pub async fn confirm(parameters: web::Query<Parameters>, pool: web::Data<PgPool>
         Ok(token) => token,
         Err(e) => {
             tracing::warn!("Invalid token format: {}", e);
-            return HttpResponse::BadRequest()
-                .body("Invalid confirmation token format. The token must be 25 alphanumeric characters.");
+            return HttpResponse::BadRequest().body(
+                "Invalid confirmation token format. The token must be 25 alphanumeric characters.",
+            );
         }
     };
 

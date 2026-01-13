@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT last_attempted_at\n        FROM issue_delivery_queue\n        WHERE newsletter_issue_id = $1 AND subscriber_email = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_attempted_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "75d8dd03badb22fa013268a308e3742d0bde6810f7745152f7cd3a9a6af3b1f4"
+}

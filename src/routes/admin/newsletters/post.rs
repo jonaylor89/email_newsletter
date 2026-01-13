@@ -44,26 +44,26 @@ pub async fn publish_newsletter(
     {
         NextAction::StartProcessing(t) => t,
         NextAction::ReturnSavedResponse(saved_response) => {
-            FlashMessage::info("The newsletter issue has been accepted - emails will go out shortly").send();
+            FlashMessage::info(
+                "The newsletter issue has been accepted - emails will go out shortly",
+            )
+            .send();
             return Ok(saved_response);
         }
     };
 
-    let issue_id = insert_newsletter_issue(
-        &mut transaction, 
-        &title, 
-        &text, &html,
-    )
-    .await
-    .context("Failed to store newsletter issue details")
-    .map_err(e500)?; 
+    let issue_id = insert_newsletter_issue(&mut transaction, &title, &text, &html)
+        .await
+        .context("Failed to store newsletter issue details")
+        .map_err(e500)?;
 
     enequeue_delivery_tasks(&mut transaction, issue_id)
         .await
         .context("Failed to enqueue delivery tasks")
         .map_err(e500)?;
 
-    FlashMessage::info("The newsletter issue has been accepted - emails will go out shortly").send();
+    FlashMessage::info("The newsletter issue has been accepted - emails will go out shortly")
+        .send();
     let response = see_other("/admin/newsletters");
     let response = save_response(transaction, &idempotency_key, *user_id, response)
         .await
@@ -96,7 +96,7 @@ async fn insert_newsletter_issue(
         text,
         html,
     )
-    .execute(transaction)
+    .execute(transaction.as_mut())
     .await?;
 
     Ok(newsletter_issue_id)
@@ -119,7 +119,7 @@ async fn enequeue_delivery_tasks(
         "#,
         newsletter_issue_id,
     )
-    .execute(transaction)
+    .execute(transaction.as_mut())
     .await?;
 
     Ok(())

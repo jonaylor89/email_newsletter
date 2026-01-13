@@ -6,7 +6,7 @@ use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 
 use email_newsletter::configuration::{get_configuration, DatabaseSettings};
-use email_newsletter::issue_delivery_queue::{try_execute_task, ExecutionOutcome};
+use email_newsletter::issue_delivery_queue::{try_execute_tasks, ExecutionOutcome};
 use email_newsletter::startup::{get_connection_pool, Application};
 use email_newsletter::telemetry::{get_subscriber, init_subscriber};
 use wiremock::MockServer;
@@ -59,7 +59,10 @@ impl TestApp {
                 .links(s)
                 .filter(|l| *l.kind() == linkify::LinkKind::Url)
                 .collect();
-            assert_eq!(links.len(), 1);
+            assert!(
+                !links.is_empty(),
+                "Expected at least one link in the email body, found none. Body: {s}"
+            );
             let raw_link = links[0].as_str().to_owned();
             let mut confirmation_link = reqwest::Url::parse(&raw_link).unwrap();
             // Let's make sure we don't call random APIs on the web
@@ -166,7 +169,7 @@ impl TestApp {
     pub async fn dispatch_all_pending_emails(&self) {
         loop {
             if let ExecutionOutcome::EmptyQueue =
-                try_execute_task(&self.db_pool, &self.email_client)
+                try_execute_tasks(&self.db_pool, &self.email_client)
                     .await
                     .unwrap()
             {

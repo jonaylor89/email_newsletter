@@ -3,13 +3,12 @@ use anyhow::Context;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::{utils::e500, authentication::UserId};
+use crate::{authentication::UserId, utils::e500};
 
 pub async fn admin_dashboard(
     user_id: web::ReqData<UserId>,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
-
     let user_id = user_id.into_inner();
     let username = get_username(*user_id, &pool).await.map_err(e500)?;
 

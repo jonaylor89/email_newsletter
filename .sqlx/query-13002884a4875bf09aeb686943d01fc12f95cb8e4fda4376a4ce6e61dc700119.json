@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT attempt_count\n        FROM issue_delivery_queue\n        WHERE newsletter_issue_id = $1 AND subscriber_email = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "attempt_count",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "13002884a4875bf09aeb686943d01fc12f95cb8e4fda4376a4ce6e61dc700119"
+}

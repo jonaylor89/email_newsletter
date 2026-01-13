@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO dead_letter_queue (\n            newsletter_issue_id,\n            subscriber_email,\n            attempt_count,\n            last_error,\n            failed_at\n        )\n        VALUES ($1, $2, $3, $4, $5)\n        ON CONFLICT (newsletter_issue_id, subscriber_email)\n        DO UPDATE SET\n            attempt_count = $3,\n            last_error = $4,\n            failed_at = $5\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int4",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4b5d71163c062e5819c0dcf7ef0d492b051c711ac400c1487456a3e571f443b9"
+}

@@ -1,9 +1,12 @@
 use anyhow::Context;
-use argon2::{Argon2, PasswordHash, PasswordVerifier, password_hash::SaltString, Algorithm, Params, Version, PasswordHasher};
+use argon2::{
+    password_hash::SaltString, Algorithm, Argon2, Params, PasswordHash, PasswordHasher,
+    PasswordVerifier, Version,
+};
 use secrecy::{ExposeSecret, Secret};
 use sqlx::PgPool;
 
-use crate::{telemetry::spawn_blocking_with_tracing, domain::Password};
+use crate::{domain::Password, telemetry::spawn_blocking_with_tracing};
 
 #[derive(thiserror::Error, Debug)]
 pub enum AuthError {
@@ -93,21 +96,15 @@ pub fn verify_password_hash(
         .map_err(AuthError::InvalidCredentials)
 }
 
-
-#[tracing::instrument(
-    name = "Change password",
-    skip(password, pool)
-)]
+#[tracing::instrument(name = "Change password", skip(password, pool))]
 pub async fn change_password(
     user_id: uuid::Uuid,
     password: Password,
     pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
-    let password_hash = spawn_blocking_with_tracing(
-        move || compute_password_hash(password)
-    )
-    .await?
-    .context("Failed to hash password")?;
+    let password_hash = spawn_blocking_with_tracing(move || compute_password_hash(password))
+        .await?
+        .context("Failed to hash password")?;
 
     sqlx::query!(
         r#"
@@ -125,21 +122,14 @@ pub async fn change_password(
     Ok(())
 }
 
-fn compute_password_hash(
-    password: Password,
-) -> Result<Secret<String>, anyhow::Error> {
+fn compute_password_hash(password: Password) -> Result<Secret<String>, anyhow::Error> {
     let salt = SaltString::generate(&mut rand::thread_rng());
     let password_hash = Argon2::new(
-        Algorithm::Argon2id, 
+        Algorithm::Argon2id,
         Version::V0x13,
         Params::new(15_000, 2, 1, None).unwrap(),
     )
-    .hash_password(
-        password
-            .as_ref()
-            .as_bytes(), 
-        &salt,
-    )?
+    .hash_password(password.as_ref().as_bytes(), &salt)?
     .to_string();
 
     Ok(Secret::new(password_hash))

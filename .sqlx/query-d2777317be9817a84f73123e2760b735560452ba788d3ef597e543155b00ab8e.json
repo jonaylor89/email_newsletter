@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE issue_delivery_queue\n        SET attempt_count = $3,\n            last_attempted_at = $4,\n            error_message = $5\n        WHERE newsletter_issue_id = $1 AND subscriber_email = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int4",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d2777317be9817a84f73123e2760b735560452ba788d3ef597e543155b00ab8e"
+}

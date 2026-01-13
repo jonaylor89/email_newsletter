@@ -1,6 +1,6 @@
 use actix_web::{body::to_bytes, HttpResponse};
 use reqwest::StatusCode;
-use sqlx::{postgres::PgHasArrayType, PgPool, Transaction, Postgres};
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use super::IdempotencyKey;
@@ -11,17 +11,11 @@ pub enum NextAction {
     ReturnSavedResponse(HttpResponse),
 }
 
-#[derive(Debug, sqlx::Type)]
+#[derive(Debug, Clone, sqlx::Type)]
 #[sqlx(type_name = "header_pair")]
 struct HeaderPairRecord {
     name: String,
     value: Vec<u8>,
-}
-
-impl PgHasArrayType for HeaderPairRecord {
-    fn array_type_info() -> sqlx::postgres::PgTypeInfo {
-        sqlx::postgres::PgTypeInfo::with_name("_header_pair")
-    }
 }
 
 pub async fn get_saved_response(
@@ -100,7 +94,7 @@ pub async fn save_response(
         headers,
         body.as_ref(),
     )
-    .execute(&mut transaction)
+    .execute(transaction.as_mut())
     .await?;
     transaction.commit().await?;
 
@@ -129,8 +123,8 @@ pub async fn try_processing(
         user_id,
         idempotency_key.as_ref(),
     )
-    .execute(&mut transaction)
-    .await? 
+    .execute(transaction.as_mut())
+    .await?
     .rows_affected();
 
     if n_inserted_rows > 0 {

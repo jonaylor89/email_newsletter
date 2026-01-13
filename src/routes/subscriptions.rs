@@ -10,7 +10,10 @@ use uuid::Uuid;
 use crate::{
     domain::{NewSubscriber, SubscriberEmail, SubscriberName},
     email_client::EmailClient,
-    email_templates::{AlreadySubscribedEmailHtml, AlreadySubscribedEmailText, ConfirmationEmailHtml, ConfirmationEmailText},
+    email_templates::{
+        AlreadySubscribedEmailHtml, AlreadySubscribedEmailText, ConfirmationEmailHtml,
+        ConfirmationEmailText,
+    },
     startup::ApplicationBaseUrl,
 };
 
@@ -84,7 +87,8 @@ pub async fn subscribe(
     email_client: web::Data<EmailClient>,
     base_url: web::Data<ApplicationBaseUrl>,
 ) -> Result<HttpResponse, SubscribeError> {
-    let new_subscriber: NewSubscriber = form.0.try_into().map_err(SubscribeError::ValidationError)?;
+    let new_subscriber: NewSubscriber =
+        form.0.try_into().map_err(SubscribeError::ValidationError)?;
 
     let mut transaction = pool
         .begin()
@@ -165,10 +169,7 @@ pub async fn subscribe(
     }
 }
 
-#[tracing::instrument(
-    name = "Check if subscriber exists by email",
-    skip(transaction, email)
-)]
+#[tracing::instrument(name = "Check if subscriber exists by email", skip(transaction, email))]
 pub async fn get_subscriber_by_email(
     transaction: &mut Transaction<'_, Postgres>,
     email: &SubscriberEmail,
@@ -181,7 +182,7 @@ pub async fn get_subscriber_by_email(
         "#,
         email.as_ref(),
     )
-    .fetch_optional(transaction)
+    .fetch_optional(transaction.as_mut())
     .await
     .map_err(|e| {
         tracing::info!("Failed to execute query: {:?}", e);
@@ -211,7 +212,7 @@ pub async fn insert_subscriber(
         new_subscriber.name.as_ref(),
         Utc::now(),
     )
-    .execute(transaction)
+    .execute(transaction.as_mut())
     .await
     .map_err(|e| {
         tracing::info!("Failed to execute query: {:?}", e);
@@ -238,7 +239,7 @@ pub async fn store_token(
         subscription_token,
         subscriber_id,
     )
-    .execute(transaction)
+    .execute(transaction.as_mut())
     .await
     .map_err(|e| {
         tracing::info!("Failed to execute query: {:?}", e);
@@ -281,14 +282,16 @@ pub async fn send_confirmation_email(
         .expect("Failed to render text email template");
 
     email_client
-        .send_email(&new_subscriber.email, "Confirm Your Subscription", &html_body, &plain_body)
+        .send_email(
+            &new_subscriber.email,
+            "Confirm Your Subscription",
+            &html_body,
+            &plain_body,
+        )
         .await
 }
 
-#[tracing::instrument(
-    name = "Send already-subscribed email",
-    skip(email_client, subscriber)
-)]
+#[tracing::instrument(name = "Send already-subscribed email", skip(email_client, subscriber))]
 pub async fn send_already_subscribed_email(
     email_client: &EmailClient,
     subscriber: &NewSubscriber,
@@ -309,7 +312,12 @@ pub async fn send_already_subscribed_email(
         .expect("Failed to render text email template");
 
     email_client
-        .send_email(&subscriber.email, "Already Subscribed", &html_body, &plain_body)
+        .send_email(
+            &subscriber.email,
+            "Already Subscribed",
+            &html_body,
+            &plain_body,
+        )
         .await
 }
 
