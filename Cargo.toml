@@ -18,6 +18,7 @@ actix-web = "4.1.0"
 actix-web-flash-messages = {version = "0.4.1", features = ["cookies"]}
 anyhow = "1.0.58"
 argon2 = {version = "0.4.1", features = ["std"]}
+askama = "0.12"
 base64 = "0.13.0"
 chrono = "0.4.19"
 claim = "0.5.0"

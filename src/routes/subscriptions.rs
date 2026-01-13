@@ -1,6 +1,7 @@
 use actix_web::http::StatusCode;
 use actix_web::{web, HttpResponse, ResponseError};
 use anyhow::Context;
+use askama::Template;
 use chrono::Utc;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -9,6 +10,7 @@ use uuid::Uuid;
 use crate::{
     domain::{NewSubscriber, SubscriberEmail, SubscriberName},
     email_client::EmailClient,
+    email_templates::{AlreadySubscribedEmailHtml, AlreadySubscribedEmailText, ConfirmationEmailHtml, ConfirmationEmailText},
     startup::ApplicationBaseUrl,
 };
 
@@ -261,19 +263,25 @@ pub async fn send_confirmation_email(
         base_url, subscription_token,
     );
 
-    let plain_body = &format!(
-        "Welcome to our newsletter!\nVisit {} to confirm your subscription.",
-        confirmation_link
-    );
+    let html_template = ConfirmationEmailHtml {
+        subscriber_name: new_subscriber.name.as_ref().to_string(),
+        confirmation_link: confirmation_link.clone(),
+    };
 
-    let html_body = &format!(
-        "Welcome to our newsletter!<br />\
-        Click <a href=\"{}\">here</a> to confirm your subscription.",
-        confirmation_link
-    );
+    let text_template = ConfirmationEmailText {
+        subscriber_name: new_subscriber.name.as_ref().to_string(),
+        confirmation_link,
+    };
+
+    let html_body = html_template
+        .render()
+        .expect("Failed to render HTML email template");
+    let plain_body = text_template
+        .render()
+        .expect("Failed to render text email template");
 
     email_client
-        .send_email(&new_subscriber.email, "Welcome!", &html_body, &plain_body)
+        .send_email(&new_subscriber.email, "Confirm Your Subscription", &html_body, &plain_body)
         .await
 }
 
@@ -285,11 +293,20 @@ pub async fn send_already_subscribed_email(
     email_client: &EmailClient,
     subscriber: &NewSubscriber,
 ) -> Result<(), reqwest::Error> {
-    let plain_body = "You're already subscribed to our newsletter!\n\
-        Thank you for your continued interest.";
+    let html_template = AlreadySubscribedEmailHtml {
+        subscriber_name: subscriber.name.as_ref().to_string(),
+    };
 
-    let html_body = "You're already subscribed to our newsletter!<br />\
-        Thank you for your continued interest.";
+    let text_template = AlreadySubscribedEmailText {
+        subscriber_name: subscriber.name.as_ref().to_string(),
+    };
+
+    let html_body = html_template
+        .render()
+        .expect("Failed to render HTML email template");
+    let plain_body = text_template
+        .render()
+        .expect("Failed to render text email template");
 
     email_client
         .send_email(&subscriber.email, "Already Subscribed", &html_body, &plain_body)

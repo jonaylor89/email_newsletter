@@ -1,0 +1,9 @@
+You're Already Subscribed!
+
+Hi {{ subscriber_name }},
+
+Good news! You're already subscribed to our newsletter.
+
+Thank you for your continued interest and support. You'll keep receiving our updates at this email address.
+
+If you'd like to unsubscribe, please click the unsubscribe link in any of our newsletter emails.
