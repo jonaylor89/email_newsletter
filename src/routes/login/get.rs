@@ -1,18 +1,21 @@
-use actix_web::{http::header::ContentType, HttpResponse};
-use actix_web_flash_messages::{IncomingFlashMessages, Level};
+use axum::response::Html;
 use std::fmt::Write;
 
-pub async fn login_form(flash_messages: IncomingFlashMessages) -> HttpResponse {
+use crate::session_state::{FlashLevel, TypedSession};
+
+pub async fn login_form(session: TypedSession) -> Html<String> {
     let mut error_html = String::new();
 
-    for m in flash_messages.iter().filter(|m| m.level() == Level::Error) {
-        writeln!(error_html, "<p><i>{}</i></p>", m.content()).unwrap();
+    for m in session
+        .get_flash_messages()
+        .await
+        .into_iter()
+    {
+        writeln!(error_html, "<p><i>{}</i></p>", m.content).unwrap();
     }
 
-    HttpResponse::Ok()
-        .content_type(ContentType::html())
-        .body(format!(
-            r#"<!DOCTYPE html>
+    Html(format!(
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta http-equiv="content-type" content="text/html; charset=utf-8">
@@ -39,5 +42,5 @@ pub async fn login_form(flash_messages: IncomingFlashMessages) -> HttpResponse {
     </form>
 </body>
 </html>"#,
-        ))
+    ))
 }

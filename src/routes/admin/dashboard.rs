@@ -1,21 +1,20 @@
-use actix_web::{http::header::ContentType, web, HttpResponse};
 use anyhow::Context;
+use axum::extract::State;
+use axum::response::Html;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::{authentication::UserId, utils::e500};
+use crate::authentication::AuthenticatedUser;
+use crate::utils::e500;
 
 pub async fn admin_dashboard(
-    user_id: web::ReqData<UserId>,
-    pool: web::Data<PgPool>,
-) -> Result<HttpResponse, actix_web::Error> {
-    let user_id = user_id.into_inner();
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    State(pool): State<PgPool>,
+) -> Result<Html<String>, crate::utils::AppError> {
     let username = get_username(*user_id, &pool).await.map_err(e500)?;
 
-    Ok(HttpResponse::Ok()
-        .content_type(ContentType::html())
-        .body(format!(
-            r#"<!DOCTYPE html>
+    Ok(Html(format!(
+        r#"<!DOCTYPE html>
             <html lang="en">
             <head>
                 <meta http-equiv="content-type" content="text/html; charset=utf-8">
@@ -35,7 +34,7 @@ pub async fn admin_dashboard(
                 </ol>
             </body>
             </html>"#,
-        )))
+    )))
 }
 
 #[tracing::instrument(name = "Get username", skip(pool))]

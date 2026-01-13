@@ -1,7 +1,8 @@
-use actix_web::http::StatusCode;
-use actix_web::{web, HttpResponse, ResponseError};
 use anyhow::Context;
 use askama::Template;
+use axum::extract::{Form, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use chrono::Utc;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -64,12 +65,14 @@ impl std::fmt::Debug for SubscribeError {
     }
 }
 
-impl ResponseError for SubscribeError {
-    fn status_code(&self) -> StatusCode {
-        match self {
+impl IntoResponse for SubscribeError {
+    fn into_response(self) -> Response {
+        let status = match self {
             SubscribeError::ValidationError(_) => StatusCode::BAD_REQUEST,
             SubscribeError::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        }
+        };
+
+        (status, self.to_string()).into_response()
     }
 }
 
@@ -82,13 +85,12 @@ impl ResponseError for SubscribeError {
     )
 )]
 pub async fn subscribe(
-    form: web::Form<FormData>,
-    pool: web::Data<PgPool>,
-    email_client: web::Data<EmailClient>,
-    base_url: web::Data<ApplicationBaseUrl>,
-) -> Result<HttpResponse, SubscribeError> {
-    let new_subscriber: NewSubscriber =
-        form.0.try_into().map_err(SubscribeError::ValidationError)?;
+    State(pool): State<PgPool>,
+    State(email_client): State<EmailClient>,
+    State(base_url): State<ApplicationBaseUrl>,
+    Form(form): Form<FormData>,
+) -> Result<Response, SubscribeError> {
+    let new_subscriber: NewSubscriber = form.try_into().map_err(SubscribeError::ValidationError)?;
 
     let mut transaction = pool
         .begin()
@@ -101,7 +103,7 @@ pub async fn subscribe(
         .context("Failed to check for existing subscriber")?;
 
     match existing_subscriber {
-        Some((subscriber_id, status)) if status == "confirmed" => {
+        Some((_subscriber_id, status)) if status == "confirmed" => {
             // Already subscribed - send a friendly email
             transaction
                 .commit()
@@ -112,7 +114,7 @@ pub async fn subscribe(
                 .await
                 .context("Failed to send already-subscribed email")?;
 
-            return Ok(HttpResponse::Ok().finish());
+            return Ok(StatusCode::OK.into_response());
         }
         Some((subscriber_id, _)) => {
             // Pending confirmation - generate new token and resend
@@ -136,7 +138,7 @@ pub async fn subscribe(
             .await
             .context("Failed to send a confirmation email")?;
 
-            return Ok(HttpResponse::Ok().finish());
+            return Ok(StatusCode::OK.into_response());
         }
         None => {
             // New subscriber - proceed with insertion
@@ -164,7 +166,7 @@ pub async fn subscribe(
             .await
             .context("Failed to send a confirmation email")?;
 
-            Ok(HttpResponse::Ok().finish())
+            Ok(StatusCode::OK.into_response())
         }
     }
 }

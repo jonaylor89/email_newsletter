@@ -1,5 +1,7 @@
-use actix_web::{body::to_bytes, HttpResponse};
-use reqwest::StatusCode;
+use axum::body::Body;
+use axum::response::Response;
+use http::StatusCode;
+use http_body_util::BodyExt;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -8,7 +10,7 @@ use super::IdempotencyKey;
 #[allow(clippy::large_enum_variant)]
 pub enum NextAction {
     StartProcessing(Transaction<'static, Postgres>),
-    ReturnSavedResponse(HttpResponse),
+    ReturnSavedResponse(Response),
 }
 
 #[derive(Debug, Clone, sqlx::Type)]
@@ -22,7 +24,7 @@ pub async fn get_saved_response(
     pool: &PgPool,
     idempotency_key: &IdempotencyKey,
     user_id: Uuid,
-) -> Result<Option<HttpResponse>, anyhow::Error> {
+) -> Result<Option<Response>, anyhow::Error> {
     let saved_response = sqlx::query!(
         r#"
         SELECT 
@@ -43,11 +45,14 @@ pub async fn get_saved_response(
 
     if let Some(r) = saved_response {
         let status_code = StatusCode::from_u16(r.response_status_code.try_into()?)?;
-        let mut response = HttpResponse::build(status_code);
+        let mut builder = http::Response::builder().status(status_code);
         for HeaderPairRecord { name, value } in r.response_headers {
-            response.append_header((name, value));
+            builder = builder.header(name, value);
         }
-        Ok(Some(response.body(r.response_body)))
+        let response = builder
+            .body(Body::from(r.response_body))
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        Ok(Some(response.into()))
     } else {
         Ok(None)
     }
@@ -57,16 +62,20 @@ pub async fn save_response(
     mut transaction: Transaction<'static, Postgres>,
     idempotency_key: &IdempotencyKey,
     user_id: Uuid,
-    http_response: HttpResponse,
-) -> Result<HttpResponse, anyhow::Error> {
+    http_response: Response,
+) -> Result<Response, anyhow::Error> {
     let (response_head, body) = http_response.into_parts();
 
-    let body = to_bytes(body).await.map_err(|e| anyhow::anyhow!("{}", e))?;
-    let status_code = response_head.status().as_u16() as i16;
+    let body = body
+        .collect()
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", e))?
+        .to_bytes();
+    let status_code = response_head.status.as_u16() as i16;
 
     let headers = {
-        let mut h = Vec::with_capacity(response_head.headers().len());
-        for (name, value) in response_head.headers().iter() {
+        let mut h = Vec::with_capacity(response_head.headers.len());
+        for (name, value) in response_head.headers.iter() {
             h.push(HeaderPairRecord {
                 name: name.as_str().to_owned(),
                 value: value.as_bytes().to_owned(),
@@ -98,7 +107,7 @@ pub async fn save_response(
     .await?;
     transaction.commit().await?;
 
-    let http_response = response_head.set_body(body).map_into_boxed_body();
+    let http_response = Response::from_parts(response_head, Body::from(body.clone()));
     Ok(http_response)
 }
 

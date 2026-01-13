@@ -1,4 +1,6 @@
-use actix_web::{web, HttpResponse};
+use axum::extract::{Query, State};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -10,13 +12,17 @@ pub struct Parameters {
 }
 
 #[tracing::instrument(name = "Confirm a pending subscriber", skip(parameters, pool))]
-pub async fn confirm(parameters: web::Query<Parameters>, pool: web::Data<PgPool>) -> HttpResponse {
+pub async fn confirm(
+    Query(parameters): Query<Parameters>,
+    State(pool): State<PgPool>,
+) -> impl IntoResponse {
     // Validate token format before querying database
     let token = match SubscriptionToken::parse(parameters.subscription_token.clone()) {
         Ok(token) => token,
         Err(e) => {
             tracing::warn!("Invalid token format: {}", e);
-            return HttpResponse::BadRequest().body(
+            return (
+                StatusCode::BAD_REQUEST,
                 "Invalid confirmation token format. The token must be 25 alphanumeric characters.",
             );
         }
@@ -26,7 +32,10 @@ pub async fn confirm(parameters: web::Query<Parameters>, pool: web::Data<PgPool>
         Ok(id) => id,
         Err(e) => {
             tracing::error!("Failed to get subscriber ID from token: {:?}", e);
-            return HttpResponse::InternalServerError().finish();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to confirm subscription. Please try again later.",
+            );
         }
     };
 
@@ -37,15 +46,19 @@ pub async fn confirm(parameters: web::Query<Parameters>, pool: web::Data<PgPool>
                 "Non-existent confirmation token: {}",
                 parameters.subscription_token
             );
-            return HttpResponse::BadRequest()
-                .body("Invalid confirmation token. The token may have expired or does not exist.");
+            return (
+                StatusCode::BAD_REQUEST,
+                "Invalid confirmation token. The token may have expired or does not exist.",
+            );
         }
         Some(subscriber_id) => match confirm_subscriber(&pool, subscriber_id).await {
-            Ok(_) => HttpResponse::Ok().body("Your subscription has been confirmed!"),
+            Ok(_) => (StatusCode::OK, "Your subscription has been confirmed!"),
             Err(e) => {
                 tracing::error!("Failed to confirm subscriber {}: {:?}", subscriber_id, e);
-                HttpResponse::InternalServerError()
-                    .body("Failed to confirm subscription. Please try again later.")
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to confirm subscription. Please try again later.",
+                )
             }
         },
     }

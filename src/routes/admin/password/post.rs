@@ -1,13 +1,14 @@
-use actix_web::{web, HttpResponse};
-use actix_web_flash_messages::FlashMessage;
+use axum::extract::{Form, State};
+use axum::response::Redirect;
 use secrecy::{ExposeSecret, Secret};
 use sqlx::PgPool;
 
 use crate::{
-    authentication::{validate_credentials, AuthError, Credentials, UserId},
+    authentication::{validate_credentials, AuthError, AuthenticatedUser, Credentials},
     domain::Password,
     routes::get_username,
-    utils::{e500, see_other},
+    session_state::TypedSession,
+    utils::e500,
 };
 
 #[derive(serde::Deserialize)]
@@ -18,24 +19,25 @@ pub struct FormData {
 }
 
 pub async fn change_password(
-    form: web::Form<FormData>,
-    user_id: web::ReqData<UserId>,
-    pool: web::Data<PgPool>,
-) -> Result<HttpResponse, actix_web::Error> {
-    let user_id = user_id.into_inner();
-
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    State(pool): State<PgPool>,
+    session: TypedSession,
+    Form(form): Form<FormData>,
+) -> Result<Redirect, crate::utils::AppError> {
     if form.new_password.expose_secret() != form.new_password_check.expose_secret() {
-        FlashMessage::error(
-            "You entered two different new passwords - the field values must match",
-        )
-        .send();
+        session
+            .flash_error("You entered two different new passwords - the field values must match")
+            .await;
+        return Ok(Redirect::to("/admin/password"));
     }
 
     let new_password: Result<Password, _> = form.new_password.expose_secret().try_into();
 
     if new_password.is_err() {
-        FlashMessage::error("You entered an invalid new password").send();
-        return Ok(see_other("/admin/password"));
+        session
+            .flash_error("You entered an invalid new password")
+            .await;
+        return Ok(Redirect::to("/admin/password"));
     }
 
     let new_password = new_password.unwrap();
@@ -44,16 +46,18 @@ pub async fn change_password(
 
     let credentials = Credentials {
         username,
-        password: form.0.current_password,
+        password: form.current_password,
     };
 
     if let Err(e) = validate_credentials(credentials, &pool).await {
         return match e {
             AuthError::InvalidCredentials(_) => {
-                FlashMessage::error("The current password is incorrect").send();
-                Ok(see_other("/admin/password"))
+                session
+                    .flash_error("The current password is incorrect")
+                    .await;
+                Ok(Redirect::to("/admin/password"))
             }
-            AuthError::UnexpectedError(_) => Err(e500(e).into()),
+            AuthError::UnexpectedError(_) => Err(e500(e)),
         };
     }
 
@@ -61,6 +65,6 @@ pub async fn change_password(
         .await
         .map_err(e500)?;
 
-    FlashMessage::info("Your password has been changed").send();
-    Ok(see_other("/admin/password"))
+    session.flash_info("Your password has been changed").await;
+    Ok(Redirect::to("/admin/password"))
 }

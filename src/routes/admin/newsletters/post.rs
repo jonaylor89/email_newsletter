@@ -1,12 +1,13 @@
-use actix_web::{web, HttpResponse};
-use actix_web_flash_messages::FlashMessage;
 use anyhow::Context;
+use axum::extract::{Form, State};
+use axum::response::Response;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
-    authentication::UserId,
+    authentication::AuthenticatedUser,
     idempotency::{save_response, try_processing, IdempotencyKey, NextAction},
+    session_state::TypedSession,
     utils::{e400, e500, see_other},
 };
 
@@ -24,17 +25,17 @@ pub struct FormData {
     fields(user_id=%&*user_id)
 )]
 pub async fn publish_newsletter(
-    form: web::Form<FormData>,
-    pool: web::Data<PgPool>,
-    user_id: web::ReqData<UserId>,
-) -> Result<HttpResponse, actix_web::Error> {
-    let user_id = user_id.into_inner();
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    State(pool): State<PgPool>,
+    session: TypedSession,
+    Form(form): Form<FormData>,
+) -> Result<Response, crate::utils::AppError> {
     let FormData {
         title,
         text,
         html,
         idempotency_key,
-    } = form.into_inner();
+    } = form;
 
     let idempotency_key: IdempotencyKey = idempotency_key.try_into().map_err(e400)?;
 
@@ -44,10 +45,9 @@ pub async fn publish_newsletter(
     {
         NextAction::StartProcessing(t) => t,
         NextAction::ReturnSavedResponse(saved_response) => {
-            FlashMessage::info(
-                "The newsletter issue has been accepted - emails will go out shortly",
-            )
-            .send();
+            session
+                .flash_info("The newsletter issue has been accepted - emails will go out shortly")
+                .await;
             return Ok(saved_response);
         }
     };
@@ -62,8 +62,9 @@ pub async fn publish_newsletter(
         .context("Failed to enqueue delivery tasks")
         .map_err(e500)?;
 
-    FlashMessage::info("The newsletter issue has been accepted - emails will go out shortly")
-        .send();
+    session
+        .flash_info("The newsletter issue has been accepted - emails will go out shortly")
+        .await;
     let response = see_other("/admin/newsletters");
     let response = save_response(transaction, &idempotency_key, *user_id, response)
         .await

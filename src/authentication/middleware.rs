@@ -1,18 +1,11 @@
 use std::ops::Deref;
 
-use actix_web::{
-    body::MessageBody,
-    dev::{ServiceRequest, ServiceResponse},
-    error::InternalError,
-    FromRequest, HttpMessage,
-};
-use actix_web_lab::middleware::Next;
+use axum::extract::FromRequestParts;
+use axum::http::request::Parts;
+use axum::response::Redirect;
 use uuid::Uuid;
 
-use crate::{
-    session_state::TypedSession,
-    utils::{e500, see_other},
-};
+use crate::session_state::TypedSession;
 
 #[derive(Copy, Clone, Debug)]
 pub struct UserId(Uuid);
@@ -31,24 +24,28 @@ impl Deref for UserId {
     }
 }
 
-pub async fn reject_anonymous_users(
-    mut req: ServiceRequest,
-    next: Next<impl MessageBody>,
-) -> Result<ServiceResponse<impl MessageBody>, actix_web::Error> {
-    let session = {
-        let (http_request, payload) = req.parts_mut();
-        TypedSession::from_request(http_request, payload).await
-    }?;
+#[derive(Clone, Copy, Debug)]
+pub struct AuthenticatedUser(pub UserId);
 
-    match session.get_user_id().map_err(e500)? {
-        Some(user_id) => {
-            req.extensions_mut().insert(UserId(user_id));
-            next.call(req).await
-        }
-        None => {
-            let response = see_other("/login");
-            let e = anyhow::anyhow!("The user has not logged in");
-            Err(InternalError::from_response(e, response).into())
+impl<S> FromRequestParts<S> for AuthenticatedUser
+where
+    S: Send + Sync,
+{
+    type Rejection = Redirect;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let session = TypedSession::from_request_parts(parts, state)
+            .await
+            .map_err(|_| Redirect::to("/login"))?;
+
+        match session.get_user_id().await {
+            Ok(Some(user_id)) => Ok(Self(UserId(user_id))),
+            _ => {
+                session
+                    .flash_error("You must be logged in to access that page")
+                    .await;
+                Err(Redirect::to("/login"))
+            }
         }
     }
 }

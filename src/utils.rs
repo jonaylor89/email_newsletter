@@ -1,22 +1,44 @@
-use actix_web::http::header::LOCATION;
-use actix_web::HttpResponse;
+use axum::http::StatusCode;
+use axum::response::Redirect;
+use axum::response::{IntoResponse, Response};
+use axum::Json;
 
-pub fn e500<T>(e: T) -> actix_web::Error
-where
-    T: std::fmt::Debug + std::fmt::Display + 'static,
-{
-    actix_web::error::ErrorInternalServerError(e)
+#[derive(Debug)]
+pub struct AppError {
+    error: anyhow::Error,
+    status: StatusCode,
 }
 
-pub fn e400<T>(e: T) -> actix_web::Error
-where
-    T: std::fmt::Debug + std::fmt::Display + 'static,
-{
-    actix_web::error::ErrorBadRequest(e)
+impl AppError {
+    pub fn new(error: anyhow::Error, status: StatusCode) -> Self {
+        Self { error, status }
+    }
 }
 
-pub fn see_other(location: &str) -> HttpResponse {
-    HttpResponse::SeeOther()
-        .insert_header((LOCATION, location))
-        .finish()
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        tracing::error!("{:?}", self.error);
+        let body = serde_json::json!({
+            "error": self.error.to_string(),
+        });
+        (self.status, Json(body)).into_response()
+    }
+}
+
+pub fn e500<T>(e: T) -> AppError
+where
+    T: Into<anyhow::Error>,
+{
+    AppError::new(e.into(), StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+pub fn e400<T>(e: T) -> AppError
+where
+    T: Into<anyhow::Error>,
+{
+    AppError::new(e.into(), StatusCode::BAD_REQUEST)
+}
+
+pub fn see_other(location: &str) -> Response {
+    Redirect::to(location).into_response()
 }

@@ -1,21 +1,18 @@
-use actix_web::{http::header::ContentType, HttpResponse};
-use actix_web_flash_messages::IncomingFlashMessages;
+use axum::response::Html;
 use std::fmt::Write;
 
-pub async fn newsletters_form(
-    flash_messages: IncomingFlashMessages,
-) -> Result<HttpResponse, actix_web::Error> {
+use crate::session_state::TypedSession;
+
+pub async fn newsletters_form(session: TypedSession) -> Html<String> {
     let mut msg_html = String::new();
-    for m in flash_messages.iter() {
-        writeln!(msg_html, "<p><i>{}</i></p>", m.content()).unwrap();
+    for m in session.get_flash_messages().await {
+        writeln!(msg_html, "<p><i>{}</i></p>", m).unwrap();
     }
 
     let idempotency_key = uuid::Uuid::new_v4();
 
-    Ok(HttpResponse::Ok()
-        .content_type(ContentType::html())
-        .body(format!(
-            r#"<!DOCTYPE html>
+    Html(format!(
+        r#"<!DOCTYPE html>
             <html lang="en">
             <head>
                 <meta http-equiv="content-type" content="text/html; charset=utf-8">
@@ -50,5 +47,5 @@ pub async fn newsletters_form(
         </form>
             </body>
             </html>"#,
-        )))
+    ))
 }

@@ -37,6 +37,19 @@ pub struct TestApp {
     pub test_user: TestUser,
     pub api_client: reqwest::Client,
     pub email_client: EmailClient,
+    shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    server_task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
+}
+
+impl Drop for TestApp {
+    fn drop(&mut self) {
+        // Signal the server to shut down when the test app is dropped
+        if let Some(tx) = self.shutdown_tx.take() {
+            let _ = tx.send(());
+        }
+        // Abort the server task
+        self.server_task.abort();
+    }
 }
 
 impl TestApp {
@@ -250,7 +263,16 @@ pub async fn spawn_app() -> TestApp {
 
     configure_database(&configuration.database).await;
 
-    let _ = tokio::spawn(application.run_until_stopped());
+    // Create a channel for graceful shutdown
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+
+    // Spawn the server with graceful shutdown
+    let server_task = tokio::spawn(application.run_with_graceful_shutdown(async {
+        shutdown_rx.await.ok();
+    }));
+
+    // Give the server a moment to start
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
@@ -266,6 +288,8 @@ pub async fn spawn_app() -> TestApp {
         test_user: TestUser::generate(),
         api_client: client,
         email_client: configuration.email_client.client(),
+        shutdown_tx: Some(shutdown_tx),
+        server_task,
     };
     test_app.test_user.store(&test_app.db_pool).await;
 

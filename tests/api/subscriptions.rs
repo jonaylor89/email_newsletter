@@ -58,9 +58,9 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
         let response = app.post_subscriptions(invalid_body.into()).await;
 
         assert_eq!(
-            400,
+            422,
             response.status().as_u16(),
-            "The API did not fail with 400 Bad Request when the payload was {}.",
+            "The API did not fail with 422 Unprocessable Entity when the payload was {}.",
             error_message
         );
     }

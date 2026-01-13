@@ -13,9 +13,15 @@ name = "email_newsletter"
 path = "src/main.rs"
 
 [dependencies]
-actix-session = {version = "0.11.0", features = ["redis-session"]}
-actix-web = "4.12.1"
-actix-web-flash-messages = {version = "0.4.2", features = ["cookies"]}
+axum = "0.8.4"
+async-trait = "0.1.80"
+tower-sessions = { version = "0.14.0", features = ["axum-core", "private"] }
+tower-sessions-redis-store = { version = "0.16.0", features = ["enable-rustls"] }
+http-body-util = "0.1.2"
+http = "1.1.0"
+tower = { version = "0.5.1", features = ["util"] }
+tower-http = { version = "0.6.1", features = ["trace"] }
+time = "0.3.45"
 anyhow = "1.0.100"
 argon2 = {version = "0.4.1", features = ["std"]}
 askama = "0.12"
@@ -43,9 +49,8 @@ serde-aux = "3.1.0"
 serde_json = "1.0.149"
 sha2 = "0.10.9"
 thiserror = "1.0.69"
-tokio = {version = "1.49", features = ["macros", "rt-multi-thread"]}
+tokio = {version = "1.49", features = ["macros", "rt-multi-thread", "net"]}
 tracing = {version = "0.1.44", features = ["log"]}
-tracing-actix-web = "0.6.2"
 tracing-bunyan-formatter = "0.3.10"
 tracing-log = "0.1.4"
 tracing-subscriber = {version = "0.3.22", features = [
@@ -56,7 +61,6 @@ unicode-segmentation = "1.12.0"
 urlencoding = "2.1.3"
 uuid = {version = "1.19.0", features = ["v4", "serde"]}
 validator = "0.15.0"
-actix-web-lab = "0.16.9"
 
 [dependencies.sqlx]
 default-features = false

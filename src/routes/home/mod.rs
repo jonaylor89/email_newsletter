@@ -1,7 +1,5 @@
-use actix_web::{http::header::ContentType, HttpResponse};
+use axum::response::Html;
 
-pub async fn home() -> HttpResponse {
-    HttpResponse::Ok()
-        .content_type(ContentType::html())
-        .body(include_str!("home.html"))
+pub async fn home() -> Html<&'static str> {
+    Html(include_str!("home.html"))
 }
