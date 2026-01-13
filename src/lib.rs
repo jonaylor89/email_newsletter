@@ -9,4 +9,5 @@ pub mod telemetry;
 pub mod session_state;
 pub mod utils;
 pub mod idempotency;
+pub mod idempotency_cleanup;
 pub mod issue_delivery_queue;

@@ -1,4 +1,5 @@
 use email_newsletter::configuration::get_configuration;
+use email_newsletter::idempotency_cleanup::run_cleanup_worker;
 use email_newsletter::issue_delivery_queue::run_worker_until_stopped;
 use email_newsletter::startup::Application;
 use email_newsletter::telemetry::{get_subscriber, init_subscriber};
@@ -16,11 +17,14 @@ async fn main() -> anyhow::Result<()> {
     let application = Application::build(configuration.clone()).await?;
     let application_task = tokio::spawn(application.run_until_stopped());
 
-    let worker_task = tokio::spawn(run_worker_until_stopped(configuration));
+    let worker_task = tokio::spawn(run_worker_until_stopped(configuration.clone()));
+
+    let cleanup_task = tokio::spawn(run_cleanup_worker(configuration));
 
     tokio::select! {
         o = application_task => report_exit("API", o),
         o = worker_task => report_exit("Background worker", o),
+        o = cleanup_task => report_exit("Idempotency cleanup worker", o),
     };
 
     Ok(())
