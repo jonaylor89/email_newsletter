@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use chrono::Utc;
 use sqlx::{PgPool, Postgres, Transaction};
 use tokio::task::JoinSet;
 use tracing::{field::display, Span};
@@ -9,6 +10,12 @@ use crate::{domain::SubscriberEmail, email_client::EmailClient, startup::get_con
 
 // Number of tasks to process concurrently
 const CONCURRENT_TASKS: usize = 10;
+
+// Maximum number of retry attempts before moving to dead letter queue
+const MAX_RETRY_ATTEMPTS: i32 = 5;
+
+// Minimum time between retry attempts (exponential backoff base)
+const RETRY_BACKOFF_MINUTES: i64 = 5;
 
 type PgTransaction = Transaction<'static, Postgres>;
 
@@ -113,10 +120,31 @@ async fn execute_single_task(
         .record("newsletter_issue_id", &display(issue_id))
         .record("subscriber_email", &display(&email));
 
-    match SubscriberEmail::parse(email.clone()) {
+    // Get current attempt count
+    let attempt_count = get_attempt_count(&pool, issue_id, &email).await?;
+
+    // Check if we should retry this task based on exponential backoff
+    if let Some(last_attempted) = get_last_attempted(&pool, issue_id, &email).await? {
+        let backoff_duration = Duration::from_secs((RETRY_BACKOFF_MINUTES * 60 * 2_i64.pow(attempt_count as u32).min(32)) as u64);
+        let elapsed = Utc::now() - last_attempted;
+
+        if elapsed < chrono::Duration::from_std(backoff_duration).unwrap() {
+            // Too soon to retry - skip this task for now
+            tracing::debug!(
+                "Skipping task (backoff): attempt {}, last_attempted {:?} ago",
+                attempt_count,
+                elapsed
+            );
+            // Just rollback transaction without deleting
+            transaction.rollback().await?;
+            return Ok(());
+        }
+    }
+
+    let send_result = match SubscriberEmail::parse(email.clone()) {
         Ok(email_addr) => {
             let issue = get_issue(&pool, issue_id).await?;
-            if let Err(e) = email_client
+            email_client
                 .send_email(
                     &email_addr,
                     &issue.title,
@@ -124,24 +152,54 @@ async fn execute_single_task(
                     &issue.text_content,
                 )
                 .await
-            {
-                tracing::error!(
-                    error.cause_chain = ?e,
-                    error.message = %e,
-                    "Failed to deliver issue to confirmed subscriber. Skipping"
-                )
-            }
         }
         Err(e) => {
+            // Invalid email - this is a non-retryable error
             tracing::error!(
                 error.cause_chain = ?e,
                 error.message = %e,
-                "Skipping a confirmed subscriber. Their stored contact details are invalid"
-            )
+                "Invalid email address - moving to dead letter queue"
+            );
+            move_to_dead_letter_queue(&pool, issue_id, &email, attempt_count, &e.to_string()).await?;
+            delete_task(transaction, issue_id, &email).await?;
+            return Ok(());
+        }
+    };
+
+    match send_result {
+        Ok(_) => {
+            // Success - delete from queue
+            tracing::info!("Successfully sent email to {}", email);
+            delete_task(transaction, issue_id, &email).await?;
+        }
+        Err(e) => {
+            let error_message = e.to_string();
+            tracing::error!(
+                error.cause_chain = ?e,
+                error.message = %error_message,
+                attempt = attempt_count + 1,
+                "Failed to deliver issue to confirmed subscriber"
+            );
+
+            // Update attempt count and error message
+            let new_attempt_count = attempt_count + 1;
+
+            if new_attempt_count >= MAX_RETRY_ATTEMPTS {
+                // Max retries reached - move to dead letter queue
+                tracing::warn!(
+                    "Max retry attempts ({}) reached for {}. Moving to dead letter queue.",
+                    MAX_RETRY_ATTEMPTS,
+                    email
+                );
+                move_to_dead_letter_queue(&pool, issue_id, &email, new_attempt_count, &error_message).await?;
+                delete_task(transaction, issue_id, &email).await?;
+            } else {
+                // Update retry tracking and keep in queue
+                update_retry_tracking(&pool, issue_id, &email, new_attempt_count, &error_message).await?;
+                transaction.rollback().await?;
+            }
         }
     }
-
-    delete_task(transaction, issue_id, &email).await?;
 
     Ok(())
 }
@@ -216,7 +274,7 @@ async fn get_issue(pool: &PgPool, issue_id: Uuid) -> Result<NewsletterIssue, any
         r#"
         SELECT title, text_content, html_content
         FROM newsletter_issues
-        WHERE 
+        WHERE
             newsletter_issue_id = $1
         "#,
         issue_id,
@@ -225,4 +283,110 @@ async fn get_issue(pool: &PgPool, issue_id: Uuid) -> Result<NewsletterIssue, any
     .await?;
 
     Ok(issue)
+}
+
+#[tracing::instrument(skip_all)]
+async fn get_attempt_count(
+    pool: &PgPool,
+    issue_id: Uuid,
+    email: &str,
+) -> Result<i32, anyhow::Error> {
+    let result = sqlx::query!(
+        r#"
+        SELECT attempt_count
+        FROM issue_delivery_queue
+        WHERE newsletter_issue_id = $1 AND subscriber_email = $2
+        "#,
+        issue_id,
+        email,
+    )
+    .fetch_one(pool)
+    .await?;
+
+    Ok(result.attempt_count)
+}
+
+#[tracing::instrument(skip_all)]
+async fn get_last_attempted(
+    pool: &PgPool,
+    issue_id: Uuid,
+    email: &str,
+) -> Result<Option<chrono::DateTime<Utc>>, anyhow::Error> {
+    let result = sqlx::query!(
+        r#"
+        SELECT last_attempted_at
+        FROM issue_delivery_queue
+        WHERE newsletter_issue_id = $1 AND subscriber_email = $2
+        "#,
+        issue_id,
+        email,
+    )
+    .fetch_one(pool)
+    .await?;
+
+    Ok(result.last_attempted_at)
+}
+
+#[tracing::instrument(skip_all)]
+async fn update_retry_tracking(
+    pool: &PgPool,
+    issue_id: Uuid,
+    email: &str,
+    attempt_count: i32,
+    error_message: &str,
+) -> Result<(), anyhow::Error> {
+    sqlx::query!(
+        r#"
+        UPDATE issue_delivery_queue
+        SET attempt_count = $3,
+            last_attempted_at = $4,
+            error_message = $5
+        WHERE newsletter_issue_id = $1 AND subscriber_email = $2
+        "#,
+        issue_id,
+        email,
+        attempt_count,
+        Utc::now(),
+        error_message,
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+#[tracing::instrument(skip_all)]
+async fn move_to_dead_letter_queue(
+    pool: &PgPool,
+    issue_id: Uuid,
+    email: &str,
+    attempt_count: i32,
+    error_message: &str,
+) -> Result<(), anyhow::Error> {
+    sqlx::query!(
+        r#"
+        INSERT INTO dead_letter_queue (
+            newsletter_issue_id,
+            subscriber_email,
+            attempt_count,
+            last_error,
+            failed_at
+        )
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (newsletter_issue_id, subscriber_email)
+        DO UPDATE SET
+            attempt_count = $3,
+            last_error = $4,
+            failed_at = $5
+        "#,
+        issue_id,
+        email,
+        attempt_count,
+        error_message,
+        Utc::now(),
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
