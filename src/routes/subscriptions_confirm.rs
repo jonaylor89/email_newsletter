@@ -28,24 +28,65 @@ pub async fn confirm(parameters: web::Query<Parameters>, pool: web::Data<PgPool>
     }
 }
 
-#[tracing::instrument(name = "Mark subscriber as confirmed", skip(subscriber_id, pool))]
-pub async fn confirm_subscriber(pool: &PgPool, subscriber_id: Uuid) -> Result<(), sqlx::Error> {
-    sqlx::query!(
+#[tracing::instrument(name = "Get subscriber status", skip(subscriber_id, pool))]
+pub async fn get_subscriber_status(
+    pool: &PgPool,
+    subscriber_id: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    let result = sqlx::query!(
         r#"
-            UPDATE subscriptions
-            SET status = 'confirmed'
+            SELECT status
+            FROM subscriptions
             WHERE id = $1
         "#,
         subscriber_id,
     )
-    .execute(pool)
+    .fetch_optional(pool)
     .await
     .map_err(|e| {
         tracing::error!("Failed to execute query {:?}", e);
-    })
-    .ok();
+        e
+    })?;
 
-    Ok(())
+    Ok(result.map(|r| r.status))
+}
+
+#[tracing::instrument(name = "Mark subscriber as confirmed", skip(subscriber_id, pool))]
+pub async fn confirm_subscriber(pool: &PgPool, subscriber_id: Uuid) -> Result<(), sqlx::Error> {
+    // Check current status to make operation idempotent
+    let current_status = get_subscriber_status(pool, subscriber_id).await?;
+
+    match current_status {
+        Some(status) if status == "confirmed" => {
+            // Already confirmed - idempotent operation
+            tracing::info!("Subscriber {} is already confirmed", subscriber_id);
+            Ok(())
+        }
+        Some(_) => {
+            // Pending confirmation - update to confirmed
+            sqlx::query!(
+                r#"
+                UPDATE subscriptions
+                SET status = 'confirmed'
+                WHERE id = $1
+                "#,
+                subscriber_id,
+            )
+            .execute(pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to execute query {:?}", e);
+                e
+            })?;
+
+            Ok(())
+        }
+        None => {
+            // Subscriber doesn't exist - this shouldn't happen
+            tracing::error!("Subscriber {} not found", subscriber_id);
+            Err(sqlx::Error::RowNotFound)
+        }
+    }
 }
 
 #[tracing::instrument(name = "Get subscriber id from token", skip(subscription_token, pool))]
