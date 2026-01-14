@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8">
+    <title>Admin dashboard</title>
+</head>
+<body>
+{% for message in flash_messages %}
+<p><i>{{ message }}</i></p>
+{% endfor %}
+<form action="/admin/newsletters" method="post">
+<label>Title
+    <input
+        type="text"
+        placeholder="Enter Title"
+        name="title"
+    >
+</label>
+<label>Text Content
+    <input
+        type="text"
+        placeholder="Enter Text Content"
+        name="text"
+    >
+</label>
+<label>HTML Content
+<input
+    type="text"
+    placeholder="Enter HTML Content"
+    name="html"
+>
+</label>
+<input hidden type="text" name="idempotency_key" value="{{ idempotency_key }}">
+<button type="submit">Submit</button>
+</form>
+</body>
+</html>

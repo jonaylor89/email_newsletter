@@ -1,4 +1,5 @@
 use anyhow::Context;
+use askama::Template;
 use axum::extract::State;
 use axum::response::Html;
 use sqlx::PgPool;
@@ -6,6 +7,7 @@ use uuid::Uuid;
 
 use crate::authentication::AuthenticatedUser;
 use crate::utils::e500;
+use crate::web_templates::AdminDashboardTemplate;
 
 pub async fn admin_dashboard(
     AuthenticatedUser(user_id): AuthenticatedUser,
@@ -13,28 +15,9 @@ pub async fn admin_dashboard(
 ) -> Result<Html<String>, crate::utils::AppError> {
     let username = get_username(*user_id, &pool).await.map_err(e500)?;
 
-    Ok(Html(format!(
-        r#"<!DOCTYPE html>
-            <html lang="en">
-            <head>
-                <meta http-equiv="content-type" content="text/html; charset=utf-8">
-                <title>Admin dashboard</title>
-            </head>
-            <body>
-                <p>Welcome, {username}!</p>
-                <p>Available actions:</p>
-                <ol>
-                    <li><a href="/admin/password">Change password</a></li>
-                    <li><a href="/admin/newsletters">Create a new newsletter</a></li>
-                    <li>
-                        <form name="logoutForm" action="/admin/logout" method="post">
-                            <input type="submit" value="Logout">
-                        </form>
-                    </li>
-                </ol>
-            </body>
-            </html>"#,
-    )))
+    let template = AdminDashboardTemplate { username };
+
+    Ok(Html(template.render().unwrap()))
 }
 
 #[tracing::instrument(name = "Get username", skip(pool))]
