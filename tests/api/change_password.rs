@@ -51,7 +51,7 @@ async fn new_password_fields_must_match() {
 
     let html_page = app.get_change_password_html().await;
     assert!(html_page.contains(
-        "<p><i>You entered two different new passwords - the field values must match</i></p>"
+        "<div class=\"flash-message\">You entered two different new passwords - the field values must match</div>"
     ))
 }
 
@@ -78,7 +78,7 @@ async fn current_password_must_be_valid() {
     assert_is_redirect_to(&response, "/admin/password");
 
     let html_page = app.get_change_password_html().await;
-    assert!(html_page.contains("<p><i>The current password is incorrect</i></p>"))
+    assert!(html_page.contains("<div class=\"flash-message\">The current password is incorrect</div>"))
 }
 
 #[tokio::test]
@@ -123,7 +123,7 @@ async fn logout_clears_session_state() {
     assert_is_redirect_to(&response, "/login");
 
     let html_page = app.get_login_html().await;
-    assert!(html_page.contains(r#"<p><i>You have successfully logged out</i></p>"#));
+    assert!(html_page.contains(r#"<div class="flash-message">You have successfully logged out</div>"#));
 
     let response = app.get_admin_dashboard().await;
     assert_is_redirect_to(&response, "/login");
@@ -153,13 +153,13 @@ async fn changing_password_works() {
     assert_is_redirect_to(&response, "/admin/password");
 
     let html_page = app.get_change_password_html().await;
-    assert!(html_page.contains("<p><i>Your password has been changed</i></p>"));
+    assert!(html_page.contains("<div class=\"flash-message\">Your password has been changed</div>"));
 
     let response = app.post_logout().await;
     assert_is_redirect_to(&response, "/login");
 
     let html_page = app.get_login_html().await;
-    assert!(html_page.contains("<p><i>You have successfully logged out</i></p>"));
+    assert!(html_page.contains("<div class=\"flash-message\">You have successfully logged out</div>"));
 
     let login_body = serde_json::json!({
         "username": &app.test_user.username,

@@ -1,20 +1,138 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta http-equiv="content-type" content="text/html; charset=utf-8">
-    <title>Admin dashboard</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Newsletter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=PT+Serif:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "PT Serif", Georgia, "Times New Roman", serif;
+            background-color: white;
+            color: black;
+            transition: background-color 0.3s ease, color 0.3s ease;
+            min-height: 100vh;
+            padding: 2rem 1rem;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            body {
+                background-color: #111827;
+                color: white;
+            }
+        }
+
+        .container {
+            max-width: 48rem;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+
+        .welcome {
+            font-size: 1.125rem;
+            margin-bottom: 3rem;
+            opacity: 0.8;
+        }
+
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+        }
+
+        .actions {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .action-item {
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            transition: border-color 0.2s ease, background-color 0.2s ease;
+        }
+
+        .action-item:hover {
+            background-color: #f9fafb;
+            border-color: #d1d5db;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .action-item {
+                border-color: #374151;
+            }
+
+            .action-item:hover {
+                background-color: #1f2937;
+                border-color: #4b5563;
+            }
+        }
+
+        a {
+            color: inherit;
+            text-decoration: underline;
+            transition: opacity 0.2s ease;
+        }
+
+        a:hover {
+            opacity: 0.7;
+        }
+
+        form {
+            display: inline;
+        }
+
+        input[type="submit"] {
+            padding: 0;
+            font-family: "PT Serif", Georgia, "Times New Roman", serif;
+            font-size: 1rem;
+            background: none;
+            color: inherit;
+            border: none;
+            text-decoration: underline;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
+        }
+
+        input[type="submit"]:hover {
+            opacity: 0.7;
+        }
+    </style>
 </head>
 <body>
-    <p>Welcome, {{ username }}!</p>
-    <p>Available actions:</p>
-    <ol>
-        <li><a href="/admin/password">Change password</a></li>
-        <li><a href="/admin/newsletters">Create a new newsletter</a></li>
-        <li>
-            <form name="logoutForm" action="/admin/logout" method="post">
-                <input type="submit" value="Logout">
-            </form>
-        </li>
-    </ol>
+    <div class="container">
+        <h1>Admin Dashboard</h1>
+        <p class="welcome">Welcome, {{ username }}!</p>
+
+        <p class="section-title">Available actions:</p>
+        <ul class="actions">
+            <li class="action-item">
+                <a href="/admin/password">Change password</a>
+            </li>
+            <li class="action-item">
+                <a href="/admin/newsletters">Create a new newsletter</a>
+            </li>
+            <li class="action-item">
+                <form name="logoutForm" action="/admin/logout" method="post">
+                    <input type="submit" value="Logout">
+                </form>
+            </li>
+        </ul>
+    </div>
 </body>
 </html>
